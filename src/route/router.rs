@@ -13,9 +13,14 @@ use memega::ops::mutation::{mutate_insert, mutate_inversion, mutate_scramble, mu
 use memega::train::cfg::{Termination, TrainerCfg};
 use memega::train::sampler::EmptyDataSampler;
 use memega::train::trainer::Trainer;
+use memegeom::primitive::path_shape::Path;
+use memegeom::primitive::point::Pt;
 use memegeom::primitive::rect::Rt;
+use memegeom::primitive::shape::Shape;
+use memegeom::primitive::ShapeOps;
 use rand::prelude::SliceRandom;
 use rand::Rng;
+use spade::{DelaunayTriangulation, Point2, Triangulation};
 
 use crate::model::pcb::{Pcb, Via, Wire};
 use crate::name::Id;
@@ -70,6 +75,66 @@ impl Router {
     pub fn route(&self, net_order: Vec<Id>) -> Result<RouteResult> {
         let mut grid = GridRouter::new(self.pcb.lock().unwrap().clone(), net_order);
         grid.route()
+    }
+
+    pub fn get_ratsnest(&self) -> Vec<Shape> {
+        let pcb = self.pcb.lock().unwrap();
+        pcb.nets()
+            .map(|net| {
+                let path_points: Vec<Pt> = net
+                    .pins
+                    .iter()
+                    .map(|pin_ref| {
+                        let (component, pin) = pcb.pin_ref(pin_ref).unwrap();
+                        (component.tf() * pin.tf()).pt(Pt::zero())
+                    })
+                    .collect();
+                Path::new(&path_points, 0.1).shape()
+            })
+            .collect()
+    }
+
+    pub fn triangulate(&self) -> Vec<Shape> {
+        let pcb = self.pcb.lock().unwrap();
+        let points_from_components = pcb.components().flat_map(|component| {
+            let pins = component.pins().map(|pin| (component.tf() * pin.tf()).pt(Pt::zero()));
+            let keepouts = component.keepouts.iter().map(|keepout| {
+                let mut s = keepout.shape.shape.clone();
+                s.apply(&component.tf());
+                s.bounds().center()
+            });
+            pins.chain(keepouts)
+        });
+        let keepouts = pcb.keepouts().iter().map(|keepout| keepout.shape.shape.bounds().center());
+        let points_from_boundaries = pcb.boundaries().iter().flat_map(|ls| {
+            // TODO this needs to contain "interesting" points along the boundary, not just the corners of the bounding box
+            let r = ls.shape.bounds();
+            [r.tr(), r.br(), r.bl(), r.tl()]
+        });
+
+        let all_points: Vec<Pt> =
+            points_from_components.chain(points_from_boundaries).chain(keepouts).collect();
+        let mut triangulation: DelaunayTriangulation<_> = DelaunayTriangulation::new();
+        for p in all_points.clone() {
+            triangulation.insert(Point2::new(p.x, p.y));
+            println!(
+                "{} {} {}",
+                triangulation.num_vertices(),
+                triangulation.num_inner_faces(),
+                triangulation.num_undirected_edges()
+            );
+        }
+
+        let t_edges = triangulation.undirected_edges().map(|edge| {
+            let [s, e] = edge.positions();
+            Path::new(&[Pt::new(s.x, s.y), Pt::new(e.x, e.y)], 0.1).shape()
+        });
+
+        all_points
+            .iter()
+            .map(|c| memegeom::primitive::circ(*c, 0.3).shape())
+            .chain(t_edges)
+            .collect()
     }
 
     pub fn run_ga(&self) -> Result<RouteResult> {

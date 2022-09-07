@@ -27,3 +27,4 @@ rand = { version = "0.8.5", features = ["small_rng"] }
 rust-dense-bitset = "0.1.1"
 serde = { version = "1.0.147", features = ["derive"] }
 strum = { version = "0.24.1", features = ["derive"] }
+spade = "2.0.0"

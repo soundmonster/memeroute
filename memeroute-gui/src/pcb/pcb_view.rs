@@ -17,13 +17,24 @@ use crate::pcb::{to_pos2, to_pt, to_rt};
 // Index 0 is front, index 1 is back.
 // TODO!! This
 
+static ANNOTATION: LazyLock<[Color32; 6]> = LazyLock::new(|| {
+    [
+        Color32::from_rgba_unmultiplied(0, 255, 0, 180),
+        Color32::from_rgba_unmultiplied(255, 0, 0, 180),
+        Color32::from_rgba_unmultiplied(0, 0, 255, 180),
+        Color32::from_rgba_unmultiplied(255, 255, 0, 180),
+        Color32::from_rgba_unmultiplied(0, 255, 255, 180),
+        Color32::from_rgba_unmultiplied(255, 0, 255, 180),
+    ]
+});
+
 static KEEPOUT: LazyLock<Color32> =
     LazyLock::new(|| Color32::from_rgba_unmultiplied(155, 27, 0, 180));
 
 static OUTLINE: LazyLock<[Color32; 2]> = LazyLock::new(|| {
     [
-        Color32::from_rgba_unmultiplied(89, 113, 193, 180),
         Color32::from_rgba_unmultiplied(168, 0, 186, 180),
+        Color32::from_rgba_unmultiplied(89, 113, 193, 180),
     ]
 });
 
@@ -33,7 +44,7 @@ static BOUNDARY: LazyLock<Color32> =
 static PIN: LazyLock<[Color32; 2]> = LazyLock::new(|| {
     [
         Color32::from_rgba_unmultiplied(0, 27, 161, 180),
-        Color32::from_rgba_unmultiplied(0, 27, 161, 180),
+        Color32::from_rgba_unmultiplied(0, 161, 27, 180),
     ]
 });
 
@@ -54,6 +65,7 @@ static DEBUG: LazyLock<Color32> =
 #[derive(Debug, Clone)]
 pub struct PcbView {
     pcb: Pcb,
+    annotations: Vec<Shape>,
     screen_area: Rt,
     local_area: Rt,
     offset: Pt,
@@ -92,6 +104,7 @@ impl PcbView {
     pub fn new(pcb: Pcb, local_area: Rt) -> Self {
         Self {
             pcb,
+            annotations: [].to_vec(),
             local_area,
             dirty: true,
             offset: Pt::zero(),
@@ -103,6 +116,12 @@ impl PcbView {
 
     pub fn set_pcb(&mut self, pcb: Pcb) {
         self.pcb = pcb;
+        self.dirty = true;
+        self.mesh.clear(); // Regenerate mesh.
+    }
+
+    pub fn set_annotations(&mut self, annotations: Vec<Shape>) {
+        self.annotations = annotations;
         self.dirty = true;
         self.mesh.clear(); // Regenerate mesh.
     }
@@ -211,6 +230,14 @@ impl PcbView {
                 let shape = path(&pts, 0.05).shape();
                 let shapes =
                     Self::draw_shape(&tf, &LayerShape { shape, layers: LayerSet::empty() }, *DEBUG);
+                Self::tessellate(&mut tess, &mut mesh, shapes);
+            }
+            for (i, annotation) in self.annotations.iter().enumerate() {
+                let shapes = Self::draw_shape(
+                    &tf,
+                    &LayerShape { shape: annotation.clone(), layers: LayerSet::empty() },
+                    ANNOTATION[i % 6],
+                );
                 Self::tessellate(&mut tess, &mut mesh, shapes);
             }
             self.mesh = mesh;
