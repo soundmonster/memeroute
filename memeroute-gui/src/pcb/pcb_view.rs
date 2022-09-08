@@ -20,11 +20,11 @@ use crate::pcb::{to_pos2, to_pt, to_rt};
 static ANNOTATION: LazyLock<[Color32; 6]> = LazyLock::new(|| {
     [
         Color32::from_rgba_unmultiplied(0, 255, 0, 180),
-        Color32::from_rgba_unmultiplied(255, 0, 0, 180),
         Color32::from_rgba_unmultiplied(0, 0, 255, 180),
         Color32::from_rgba_unmultiplied(255, 255, 0, 180),
         Color32::from_rgba_unmultiplied(0, 255, 255, 180),
         Color32::from_rgba_unmultiplied(255, 0, 255, 180),
+        Color32::from_rgba_unmultiplied(255, 0, 0, 180),
     ]
 });
 
@@ -65,7 +65,7 @@ static DEBUG: LazyLock<Color32> =
 #[derive(Debug, Clone)]
 pub struct PcbView {
     pcb: Pcb,
-    annotations: Vec<Shape>,
+    annotations: Vec<Vec<Shape>>,
     screen_area: Rt,
     local_area: Rt,
     offset: Pt,
@@ -120,7 +120,7 @@ impl PcbView {
         self.mesh.clear(); // Regenerate mesh.
     }
 
-    pub fn set_annotations(&mut self, annotations: Vec<Shape>) {
+    pub fn set_annotations(&mut self, annotations: Vec<Vec<Shape>>) {
         self.annotations = annotations;
         self.dirty = true;
         self.mesh.clear(); // Regenerate mesh.
@@ -232,13 +232,15 @@ impl PcbView {
                     Self::draw_shape(&tf, &LayerShape { shape, layers: LayerSet::empty() }, *DEBUG);
                 Self::tessellate(&mut tess, &mut mesh, shapes);
             }
-            for (i, annotation) in self.annotations.iter().enumerate() {
-                let shapes = Self::draw_shape(
-                    &tf,
-                    &LayerShape { shape: annotation.clone(), layers: LayerSet::empty() },
-                    ANNOTATION[i % 6],
-                );
-                Self::tessellate(&mut tess, &mut mesh, shapes);
+            for (i, annotation_group) in self.annotations.iter().enumerate() {
+                for annotation in annotation_group {
+                    let shapes = Self::draw_shape(
+                        &tf,
+                        &LayerShape { shape: annotation.clone(), layers: LayerSet::empty() },
+                        ANNOTATION[i % 6],
+                    );
+                    Self::tessellate(&mut tess, &mut mesh, shapes);
+                }
             }
             self.mesh = mesh;
         }

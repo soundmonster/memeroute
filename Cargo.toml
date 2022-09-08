@@ -22,6 +22,7 @@ memedsn = {version = "0.1.0", git = "https://github.com/Edgeworth/memedsn"}
 memega = {version = "0.1.0", git = "https://github.com/Edgeworth/memega"}
 memegeom = {version = "0.1.0", git = "https://github.com/Edgeworth/memegeom"}
 ordered-float = "3.3.0"
+petgraph = "0.6.2"
 priority-queue = "1.2.3"
 rand = { version = "0.8.5", features = ["small_rng"] }
 rust-dense-bitset = "0.1.1"

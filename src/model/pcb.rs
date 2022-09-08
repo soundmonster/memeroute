@@ -296,7 +296,7 @@ impl Padstack {
 }
 
 #[must_use]
-#[derive(Debug, Hash, PartialEq, Eq, Default, Clone)]
+#[derive(Debug, Hash, PartialEq, Eq, Default, Clone, Copy, PartialOrd, Ord)]
 pub struct PinRef {
     pub component: Id,
     pub pin: Id,

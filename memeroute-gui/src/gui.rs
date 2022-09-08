@@ -97,7 +97,7 @@ impl eframe::App for MemerouteGui {
                 println!("Ratsnest clicked");
                 // Update pcb view.
                 let router = Router::new(self.pcb.clone());
-                let annotations = router.get_ratsnest();
+                let annotations = router.ratsnest();
                 self.pcb_view.set_annotations(annotations);
             }
         });

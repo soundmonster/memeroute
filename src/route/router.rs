@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 use derive_more::{Deref, DerefMut, Display};
@@ -18,11 +19,15 @@ use memegeom::primitive::point::Pt;
 use memegeom::primitive::rect::Rt;
 use memegeom::primitive::shape::Shape;
 use memegeom::primitive::ShapeOps;
+use petgraph::algo::MinSpanningTree;
+use petgraph::data::FromElements;
+use petgraph::graphmap::GraphMap;
+use petgraph::Undirected;
 use rand::prelude::SliceRandom;
 use rand::Rng;
 use spade::{DelaunayTriangulation, Point2, Triangulation};
 
-use crate::model::pcb::{Pcb, Via, Wire};
+use crate::model::pcb::{Pcb, PinRef, Via, Wire};
 use crate::name::Id;
 use crate::route::grid::GridRouter;
 
@@ -77,24 +82,44 @@ impl Router {
         grid.route()
     }
 
-    pub fn get_ratsnest(&self) -> Vec<Shape> {
+    pub fn ratsnest(&self) -> Vec<Vec<Shape>> {
         let pcb = self.pcb.lock().unwrap();
+
         pcb.nets()
             .map(|net| {
-                let path_points: Vec<Pt> = net
-                    .pins
-                    .iter()
-                    .map(|pin_ref| {
-                        let (component, pin) = pcb.pin_ref(pin_ref).unwrap();
-                        (component.tf() * pin.tf()).pt(Pt::zero())
+                let mut graph = GraphMap::<PinRef, f64, Undirected>::new();
+                let mut pins_in_net = BTreeMap::new();
+                for pin_ref in &net.pins {
+                    let (component, pin) = pcb.pin_ref(&pin_ref).unwrap();
+                    let point = (component.tf() * pin.tf()).pt(Pt::zero());
+                    pins_in_net.insert(pin_ref, point);
+                }
+
+                let pins_list: Vec<(&&PinRef, &Pt)> = pins_in_net.iter().collect();
+                for i in 0..pins_list.len() {
+                    for j in (i + 1)..pins_list.len() {
+                        let (&&id_a, pt_a) = pins_list.get(i).unwrap();
+                        let (&&id_b, pt_b) = pins_list.get(j).unwrap();
+                        let weight = pt_a.dist_to_shape(&pt_b.shape());
+                        graph.add_edge(id_a, id_b, weight);
+                    }
+                }
+                let mst: MinSpanningTree<&GraphMap<PinRef, f64, Undirected>> =
+                    petgraph::algo::min_spanning_tree(&graph);
+                let mstg: GraphMap<PinRef, f64, Undirected> = GraphMap::from_elements(mst);
+                mstg.all_edges()
+                    .filter(|&(_, _, &w)| w > 0.0)
+                    .map(|(id_a, id_b, _)| {
+                        let &pt_a = pins_in_net.get(&id_a).unwrap();
+                        let &pt_b = pins_in_net.get(&id_b).unwrap();
+                        Path::new(&[pt_a, pt_b], 0.1).shape()
                     })
-                    .collect();
-                Path::new(&path_points, 0.1).shape()
+                    .collect::<Vec<Shape>>()
             })
             .collect()
     }
 
-    pub fn triangulate(&self) -> Vec<Shape> {
+    pub fn triangulate(&self) -> Vec<Vec<Shape>> {
         let pcb = self.pcb.lock().unwrap();
         let points_from_components = pcb.components().flat_map(|component| {
             let pins = component.pins().map(|pin| (component.tf() * pin.tf()).pt(Pt::zero()));
@@ -116,25 +141,19 @@ impl Router {
             points_from_components.chain(points_from_boundaries).chain(keepouts).collect();
         let mut triangulation: DelaunayTriangulation<_> = DelaunayTriangulation::new();
         for p in all_points.clone() {
-            triangulation.insert(Point2::new(p.x, p.y));
-            println!(
-                "{} {} {}",
-                triangulation.num_vertices(),
-                triangulation.num_inner_faces(),
-                triangulation.num_undirected_edges()
-            );
+            let _ = triangulation.insert(Point2::new(p.x, p.y));
         }
 
-        let t_edges = triangulation.undirected_edges().map(|edge| {
-            let [s, e] = edge.positions();
-            Path::new(&[Pt::new(s.x, s.y), Pt::new(e.x, e.y)], 0.1).shape()
-        });
+        let t_edges = triangulation
+            .undirected_edges()
+            .map(|edge| {
+                let [s, e] = edge.positions();
+                Path::new(&[Pt::new(s.x, s.y), Pt::new(e.x, e.y)], 0.1).shape()
+            })
+            .collect();
 
-        all_points
-            .iter()
-            .map(|c| memegeom::primitive::circ(*c, 0.3).shape())
-            .chain(t_edges)
-            .collect()
+        [all_points.iter().map(|c| memegeom::primitive::circ(*c, 0.3).shape()).collect(), t_edges]
+            .to_vec()
     }
 
     pub fn run_ga(&self) -> Result<RouteResult> {
