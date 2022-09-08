@@ -86,19 +86,22 @@ impl eframe::App for MemerouteGui {
             }
 
             if ui.button("Triangulate").clicked() {
-                println!("Triangulate clicked");
-                // Update pcb view.
+                // Update pcb annotations.
                 let router = Router::new(self.pcb.clone());
                 let annotations = router.triangulate();
                 self.pcb_view.set_annotations(annotations);
             }
 
             if ui.button("Ratsnest").clicked() {
-                println!("Ratsnest clicked");
-                // Update pcb view.
+                // Update pcb annotations.
                 let router = Router::new(self.pcb.clone());
                 let annotations = router.ratsnest();
                 self.pcb_view.set_annotations(annotations);
+            }
+
+            if ui.button("Clear").clicked() {
+                // Update pcb annotations.
+                self.pcb_view.set_annotations(vec![]);
             }
         });
 
