@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, Mutex};
 
 use eframe::egui::epaint::{Mesh, TessellationOptions, Tessellator};
 use eframe::egui::{epaint, Color32, Context, PointerButton, Response, Sense, Ui, Widget};
@@ -52,7 +52,7 @@ static DEBUG: LazyLock<Color32> =
 
 #[derive(Debug, Clone)]
 pub struct PcbView {
-    pcb: Pcb,
+    pcb: Arc<Mutex<Pcb>>,
     screen_area: Rt,
     local_area: Rt,
     offset: Pt,
@@ -88,7 +88,7 @@ impl Widget for &mut PcbView {
 }
 
 impl PcbView {
-    pub fn new(pcb: Pcb, local_area: Rt) -> Self {
+    pub fn new(pcb: Arc<Mutex<Pcb>>, local_area: Rt) -> Self {
         Self {
             pcb,
             local_area,
@@ -100,7 +100,7 @@ impl PcbView {
         }
     }
 
-    pub fn set_pcb(&mut self, pcb: Pcb) {
+    pub fn set_pcb(&mut self, pcb: Arc<Mutex<Pcb>>) {
         self.pcb = pcb;
         self.dirty = true;
         self.mesh.clear(); // Regenerate mesh.
@@ -181,35 +181,42 @@ impl PcbView {
                 TessellationOptions { feathering: false, ..Default::default() },
                 ctx.fonts().font_image_size(),
             );
-            for boundary in self.pcb.boundaries() {
+            let pcb = self.pcb.clone();
+            for boundary in pcb.lock().unwrap().boundaries() {
                 let shapes = Self::draw_shape(&tf, boundary, *BOUNDARY);
                 Self::tessellate(&mut tess, &mut mesh, shapes);
             }
-            for keepout in self.pcb.keepouts() {
+            for keepout in pcb.lock().unwrap().keepouts() {
                 let shapes = Self::draw_keepout(&tf, keepout, *KEEPOUT);
                 Self::tessellate(&mut tess, &mut mesh, shapes);
             }
-            for component in self.pcb.components() {
+            for component in pcb.lock().unwrap().components() {
                 let shapes = Self::draw_component(&tf, component);
                 Self::tessellate(&mut tess, &mut mesh, shapes);
             }
-            for wire in self.pcb.wires() {
+            for wire in pcb.lock().unwrap().wires() {
                 // TODO!!: Fix up layerset to color mapping.
                 let col = WIRE[Self::layer_id_to_color_idx(wire.shape.layers.id().unwrap())];
                 let shapes = Self::draw_shape(&tf, &wire.shape, col);
                 Self::tessellate(&mut tess, &mut mesh, shapes);
             }
-            for via in self.pcb.vias() {
+            for via in pcb.lock().unwrap().vias() {
                 let shapes = Self::draw_padstack(&via.tf(), &via.padstack, *VIA);
                 Self::tessellate(&mut tess, &mut mesh, shapes);
             }
-            for rt in self.pcb.debug_rts() {
+            for rt in pcb.lock().unwrap().debug_rts() {
                 let mut pts = rt.pts().to_vec();
                 pts.push(rt.pts()[0]);
                 let shape = path(&pts, 0.05).shape();
                 let shapes =
                     Self::draw_shape(&tf, &LayerShape { shape, layers: LayerSet::empty() }, *DEBUG);
                 Self::tessellate(&mut tess, &mut mesh, shapes);
+            }
+            for annotation_group in pcb.lock().unwrap().debug_annotations() {
+                for annotation in annotation_group {
+                    let shapes = Self::draw_shape(&tf, annotation, *BOUNDARY);
+                    Self::tessellate(&mut tess, &mut mesh, shapes);
+                }
             }
             self.mesh = mesh;
         }

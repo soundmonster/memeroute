@@ -149,7 +149,6 @@ impl DesignToPcb {
         })
     }
 
-
     fn image(&self, v: &DsnImage) -> Result<Component> {
         let mut c = Component::default();
         c.footprint_id = self.pcb.to_id(&v.image_id);

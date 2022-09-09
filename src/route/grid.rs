@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use eyre::{eyre, Result};
 use memegeom::geom::math::f64_cmp;
@@ -53,15 +54,16 @@ pub type BlockMap = HashMap<State, i64>;
 
 #[derive(Debug, Clone)]
 pub struct GridRouter {
+    pcb: Arc<Mutex<Pcb>>,
     resolution: f64,
     place: PlaceModel,
     net_order: Vec<Id>,
 }
 
 impl GridRouter {
-    pub fn new(pcb: Pcb, net_order: Vec<Id>) -> Self {
-        let place = PlaceModel::new(pcb);
-        Self { resolution: 0.4, place, net_order }
+    pub fn new(pcb: Arc<Mutex<Pcb>>, net_order: Vec<Id>) -> Self {
+        let place = PlaceModel::new(pcb.lock().unwrap().clone());
+        Self { pcb, resolution: 0.4, place, net_order }
     }
 
     fn pin_ref_state(&self, pin_ref: &PinRef) -> Result<State> {

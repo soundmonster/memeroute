@@ -69,12 +69,20 @@ impl LayerSet {
 
     #[must_use]
     pub fn id(&self) -> Option<LayerId> {
-        if self.len() == 1 { Some(self.l.first_set() as LayerId) } else { None }
+        if self.len() == 1 {
+            Some(self.l.first_set() as LayerId)
+        } else {
+            None
+        }
     }
 
     #[must_use]
     pub fn first(&self) -> Option<LayerId> {
-        if self.is_empty() { None } else { Some(self.l.first_set() as LayerId) }
+        if self.is_empty() {
+            None
+        } else {
+            Some(self.l.first_set() as LayerId)
+        }
     }
 
     #[must_use]
@@ -157,6 +165,15 @@ pub struct LayerShape {
 }
 
 impl LayerShape {
+    pub fn new(layers: LayerSet, shape: Shape) -> Self {
+        Self { layers, shape }
+    }
+
+    pub fn one(layer_id: LayerId, shape: Shape) -> Self {
+        let layers = LayerSet::one(layer_id);
+        Self { layers, shape }
+    }
+
     pub fn flip(&mut self, num_layers: usize) {
         self.layers.flip(num_layers);
     }
@@ -474,6 +491,7 @@ pub struct Pcb {
 
     // Debug:
     debug_rts: Vec<Rt>,
+    debug_annotations: Vec<Vec<LayerShape>>,
 }
 
 impl Clone for Pcb {
@@ -494,6 +512,7 @@ impl Clone for Pcb {
             net_to_ruleset: self.net_to_ruleset.clone(),
             default_net_ruleset: self.default_net_ruleset,
             debug_rts: self.debug_rts.clone(),
+            debug_annotations: self.debug_annotations.clone(),
         }
     }
 }
@@ -647,5 +666,13 @@ impl Pcb {
 
     pub fn debug_rts(&self) -> &[Rt] {
         &self.debug_rts
+    }
+
+    pub fn add_debug_annotation(&mut self, a: Vec<LayerShape>) {
+        self.debug_annotations.push(a);
+    }
+
+    pub fn debug_annotations(&self) -> &Vec<Vec<LayerShape>> {
+        &self.debug_annotations
     }
 }

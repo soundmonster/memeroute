@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use eframe::egui;
@@ -25,19 +26,25 @@ impl Default for State {
 #[derive(Debug, Clone)]
 pub struct MemerouteGui {
     s: State,
-    pcb: Pcb,
+    pcb: Arc<Mutex<Pcb>>,
     pcb_view: PcbView,
     data_path: PathBuf,
 }
 
 impl MemerouteGui {
-    pub fn new<P: AsRef<Path>>(pcb: Pcb, data_path: P, cc: &eframe::CreationContext<'_>) -> Self {
+    pub fn new<P: AsRef<Path>>(
+        pcb_input: Pcb,
+        data_path: P,
+        cc: &eframe::CreationContext<'_>,
+    ) -> Self {
         let s: State = if let Some(storage) = cc.storage {
             eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default()
         } else {
             State::default()
         };
-        let pcb_view = PcbView::new(pcb.clone(), pcb.bounds());
+        let bounds = pcb_input.bounds().clone();
+        let pcb = Arc::new(Mutex::new(pcb_input));
+        let pcb_view = PcbView::new(pcb.clone(), bounds);
         Self { s, pcb, pcb_view, data_path: data_path.as_ref().into() }
     }
 }
@@ -73,10 +80,10 @@ impl eframe::App for MemerouteGui {
                     resp.vias.len(),
                     Instant::now().duration_since(start)
                 );
-                apply_route_result(&mut self.pcb, &resp);
+                apply_route_result(&mut self.pcb.clone().lock().unwrap(), &resp);
 
                 let output_path = self.data_path.with_extension("ses");
-                let ses = PcbToSession::new(self.pcb.clone()).convert().unwrap();
+                let ses = PcbToSession::new(self.pcb.lock().unwrap().clone()).convert().unwrap();
                 std::fs::write(output_path, ses).unwrap();
 
                 // Update pcb view.

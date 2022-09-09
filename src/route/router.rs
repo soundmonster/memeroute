@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use derive_more::{Deref, DerefMut, Display};
 use eyre::Result;
@@ -44,18 +44,18 @@ impl RouteResult {
 
 #[derive(Debug)]
 pub struct Router {
-    pcb: Mutex<Pcb>,
+    pcb: Arc<Mutex<Pcb>>,
 }
 
 impl Clone for Router {
     fn clone(&self) -> Self {
-        Self::new(self.pcb.lock().unwrap().clone())
+        Self::new(self.pcb.clone())
     }
 }
 
 impl Router {
-    pub fn new(pcb: Pcb) -> Self {
-        Self { pcb: Mutex::new(pcb) }
+    pub fn new(pcb: Arc<Mutex<Pcb>>) -> Self {
+        Self { pcb }
     }
 
     pub fn rand_net_order(&self) -> Vec<Id> {
@@ -66,7 +66,7 @@ impl Router {
     }
 
     pub fn route(&self, net_order: Vec<Id>) -> Result<RouteResult> {
-        let mut grid = GridRouter::new(self.pcb.lock().unwrap().clone(), net_order);
+        let mut grid = GridRouter::new(self.pcb.clone(), net_order);
         grid.route()
     }
 
