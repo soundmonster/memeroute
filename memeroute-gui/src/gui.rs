@@ -99,6 +99,21 @@ impl eframe::App for MemerouteGui {
                 self.pcb_view.set_annotations(annotations);
             }
 
+            if ui.button("All possible connections").clicked() {
+                // Update pcb annotations.
+                let router = Router::new(self.pcb.clone());
+                let annotations = router.all_possible_connections();
+                self.pcb_view.set_annotations(annotations);
+            }
+
+            if ui.button("Everything").clicked() {
+                // Update pcb annotations.
+                let router = Router::new(self.pcb.clone());
+                let mut annotations = router.all_possible_connections();
+                annotations.append(&mut router.triangulate());
+                self.pcb_view.set_annotations(annotations);
+            }
+
             if ui.button("Clear").clicked() {
                 // Update pcb annotations.
                 self.pcb_view.set_annotations(vec![]);

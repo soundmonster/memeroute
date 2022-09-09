@@ -82,6 +82,41 @@ impl Router {
         grid.route()
     }
 
+    pub fn all_possible_connections(&self) -> Vec<Vec<Shape>> {
+        let pcb = self.pcb.lock().unwrap();
+
+        pcb.nets()
+            .map(|net| {
+                let mut graph = GraphMap::<PinRef, f64, Undirected>::new();
+                let mut pins_in_net = BTreeMap::new();
+                for pin_ref in &net.pins {
+                    let (component, pin) = pcb.pin_ref(&pin_ref).unwrap();
+                    let point = (component.tf() * pin.tf()).pt(Pt::zero());
+                    pins_in_net.insert(pin_ref, point);
+                }
+
+                let pins_list: Vec<(&&PinRef, &Pt)> = pins_in_net.iter().collect();
+                for i in 0..pins_list.len() {
+                    for j in (i + 1)..pins_list.len() {
+                        let (&&id_a, pt_a) = pins_list.get(i).unwrap();
+                        let (&&id_b, pt_b) = pins_list.get(j).unwrap();
+                        let weight = pt_a.dist_to_shape(&pt_b.shape());
+                        graph.add_edge(id_a, id_b, weight);
+                    }
+                }
+                graph
+                    .all_edges()
+                    .filter(|&(_, _, &w)| w > 0.0)
+                    .map(|(id_a, id_b, _)| {
+                        let &pt_a = pins_in_net.get(&id_a).unwrap();
+                        let &pt_b = pins_in_net.get(&id_b).unwrap();
+                        Path::new(&[pt_a, pt_b], 0.1).shape()
+                    })
+                    .collect::<Vec<Shape>>()
+            })
+            .collect()
+    }
+
     pub fn ratsnest(&self) -> Vec<Vec<Shape>> {
         let pcb = self.pcb.lock().unwrap();
 

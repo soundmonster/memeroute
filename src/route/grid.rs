@@ -15,7 +15,7 @@ use crate::name::{Id, NO_ID};
 use crate::route::place_model::PlaceModel;
 use crate::route::router::{RouteResult, RouteStrategy};
 
-const VIA_COST: f64 = 10.0;
+const VIA_COST: f64 = 1000.0;
 
 const DIR: [(PtI, f64); 9] = [
     (pti(-1, 0), 1.0),
