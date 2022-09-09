@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use std::thread;
 use std::time::Instant;
 
 use eframe::egui;
@@ -27,7 +28,7 @@ impl Default for State {
 pub struct MemerouteGui {
     s: State,
     pcb: Arc<Mutex<Pcb>>,
-    pcb_view: PcbView,
+    pcb_view: Arc<Mutex<PcbView>>,
     data_path: PathBuf,
 }
 
@@ -44,7 +45,7 @@ impl MemerouteGui {
         };
         let bounds = pcb_input.bounds().clone();
         let pcb = Arc::new(Mutex::new(pcb_input));
-        let pcb_view = PcbView::new(pcb.clone(), bounds);
+        let pcb_view = Arc::new(Mutex::new(PcbView::new(pcb.clone(), bounds)));
         Self { s, pcb, pcb_view, data_path: data_path.as_ref().into() }
     }
 }
@@ -69,30 +70,33 @@ impl eframe::App for MemerouteGui {
             ui.heading("Side Panel");
 
             if ui.button("Route").clicked() {
-                let router = Router::new(self.pcb.clone());
-                let start = Instant::now();
-                let resp = router.route(router.rand_net_order()).unwrap();
-                // let resp = router.run_ga().unwrap();
-                println!(
-                    "Route result succeeded: {}, {} wires {} vias, time: {:?}",
-                    !resp.failed,
-                    resp.wires.len(),
-                    resp.vias.len(),
-                    Instant::now().duration_since(start)
-                );
-                apply_route_result(&mut self.pcb.clone().lock().unwrap(), &resp);
-
+                let pcb = self.pcb.clone();
                 let output_path = self.data_path.with_extension("ses");
-                let ses = PcbToSession::new(self.pcb.lock().unwrap().clone()).convert().unwrap();
-                std::fs::write(output_path, ses).unwrap();
+                let pcb_view = self.pcb_view.clone();
+                let _handle = thread::spawn(move || {
+                    let router = Router::new(pcb.clone());
+                    let start = Instant::now();
+                    let resp = router.route(router.rand_net_order()).unwrap();
+                    // let resp = router.run_ga().unwrap();
+                    println!(
+                        "Route result succeeded: {}, {} wires {} vias, time: {:?}",
+                        !resp.failed,
+                        resp.wires.len(),
+                        resp.vias.len(),
+                        Instant::now().duration_since(start)
+                    );
+                    apply_route_result(&mut pcb.clone().lock().unwrap(), &resp);
 
-                // Update pcb view.
-                self.pcb_view.set_pcb(self.pcb.clone());
+                    let ses = PcbToSession::new(pcb.lock().unwrap().clone()).convert().unwrap();
+                    std::fs::write(output_path, ses).unwrap();
+                    // Update pcb view.
+                    pcb_view.lock().unwrap().set_pcb(pcb.clone());
+                });
             }
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.pcb_view.ui(ui);
+            self.pcb_view.lock().unwrap().ui(ui);
         });
     }
 }
