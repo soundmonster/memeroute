@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 use derive_more::{Deref, DerefMut, Display};
@@ -27,7 +26,7 @@ use rand::prelude::SliceRandom;
 use rand::Rng;
 use spade::{DelaunayTriangulation, Point2, Triangulation};
 
-use crate::model::pcb::{Pcb, PinRef, Via, Wire};
+use crate::model::pcb::{LayerId, Net, Pcb, PinRef, Via, Wire};
 use crate::name::Id;
 use crate::route::grid::GridRouter;
 
@@ -87,32 +86,8 @@ impl Router {
 
         pcb.nets()
             .map(|net| {
-                let mut graph = GraphMap::<PinRef, f64, Undirected>::new();
-                let mut pins_in_net = BTreeMap::new();
-                for pin_ref in &net.pins {
-                    let (component, pin) = pcb.pin_ref(&pin_ref).unwrap();
-                    let point = (component.tf() * pin.tf()).pt(Pt::zero());
-                    pins_in_net.insert(pin_ref, point);
-                }
-
-                let pins_list: Vec<(&&PinRef, &Pt)> = pins_in_net.iter().collect();
-                for i in 0..pins_list.len() {
-                    for j in (i + 1)..pins_list.len() {
-                        let (&&id_a, pt_a) = pins_list.get(i).unwrap();
-                        let (&&id_b, pt_b) = pins_list.get(j).unwrap();
-                        let weight = pt_a.dist_to_shape(&pt_b.shape());
-                        graph.add_edge(id_a, id_b, weight);
-                    }
-                }
-                graph
-                    .all_edges()
-                    .filter(|&(_, _, &w)| w > 0.0)
-                    .map(|(id_a, id_b, _)| {
-                        let &pt_a = pins_in_net.get(&id_a).unwrap();
-                        let &pt_b = pins_in_net.get(&id_b).unwrap();
-                        Path::new(&[pt_a, pt_b], 0.1).shape()
-                    })
-                    .collect::<Vec<Shape>>()
+                let graph = full_net_interconnect(&pcb, net);
+                edges_to_shapes(&pcb, &graph)
             })
             .collect()
     }
@@ -122,34 +97,12 @@ impl Router {
 
         pcb.nets()
             .map(|net| {
-                let mut graph = GraphMap::<PinRef, f64, Undirected>::new();
-                let mut pins_in_net = BTreeMap::new();
-                for pin_ref in &net.pins {
-                    let (component, pin) = pcb.pin_ref(&pin_ref).unwrap();
-                    let point = (component.tf() * pin.tf()).pt(Pt::zero());
-                    pins_in_net.insert(pin_ref, point);
-                }
-
-                let pins_list: Vec<(&&PinRef, &Pt)> = pins_in_net.iter().collect();
-                for i in 0..pins_list.len() {
-                    for j in (i + 1)..pins_list.len() {
-                        let (&&id_a, pt_a) = pins_list.get(i).unwrap();
-                        let (&&id_b, pt_b) = pins_list.get(j).unwrap();
-                        let weight = pt_a.dist_to_shape(&pt_b.shape());
-                        graph.add_edge(id_a, id_b, weight);
-                    }
-                }
-                let mst: MinSpanningTree<&GraphMap<PinRef, f64, Undirected>> =
-                    petgraph::algo::min_spanning_tree(&graph);
-                let mstg: GraphMap<PinRef, f64, Undirected> = GraphMap::from_elements(mst);
-                mstg.all_edges()
-                    .filter(|&(_, _, &w)| w > 0.0)
-                    .map(|(id_a, id_b, _)| {
-                        let &pt_a = pins_in_net.get(&id_a).unwrap();
-                        let &pt_b = pins_in_net.get(&id_b).unwrap();
-                        Path::new(&[pt_a, pt_b], 0.1).shape()
-                    })
-                    .collect::<Vec<Shape>>()
+                let graph = full_net_interconnect(&pcb, net);
+                dbg!(&graph);
+                let mst: MinSpanningTree<&Ratsnest> = petgraph::algo::min_spanning_tree(&graph);
+                let mstg: Ratsnest = GraphMap::from_elements(mst);
+                dbg!(&mstg);
+                edges_to_shapes(&pcb, &mstg)
             })
             .collect()
     }
@@ -279,4 +232,66 @@ pub fn apply_route_result(pcb: &mut Pcb, r: &RouteResult) {
     for rt in &r.debug_rts {
         pcb.add_debug_rt(*rt);
     }
+}
+
+#[derive(Debug, Hash, PartialEq, Eq, Default, Clone, Copy, PartialOrd, Ord)]
+struct PinOnLayer {
+    pub pin_ref: PinRef,
+    pub layer_id: LayerId,
+}
+
+type Ratsnest = GraphMap<PinOnLayer, f64, Undirected>;
+
+fn full_net_interconnect(pcb: &Pcb, net: &Net) -> Ratsnest {
+    let mut graph = Ratsnest::new();
+    let pins: Vec<(PinOnLayer, Pt)> = net
+        .pins
+        .iter()
+        .flat_map(|&pin_ref: &PinRef| -> Vec<(PinOnLayer, Pt)> {
+            let point = pin_ref_pt(pcb, &pin_ref);
+            let (_, pin) = pcb.pin_ref(&pin_ref).unwrap();
+            pin.padstack
+                .layers()
+                .iter()
+                .map(|layer_id| -> (PinOnLayer, Pt) { (PinOnLayer { pin_ref, layer_id }, point) })
+                .collect()
+        })
+        .collect();
+
+    for i in 0..pins.len() {
+        for j in (i + 1)..pins.len() {
+            let &(pin_a, pt_a) = pins.get(i).unwrap();
+            let &(pin_b, pt_b) = pins.get(j).unwrap();
+            let distance = pt_a.dist_to_shape(&pt_b.shape());
+            let layer_factor = if pin_a.layer_id == pin_b.layer_id { 1.0 } else { 10.0 };
+            graph.add_edge(pin_a, pin_b, distance * layer_factor);
+        }
+    }
+    graph
+}
+
+fn edges_to_shapes(pcb: &Pcb, graph: &Ratsnest) -> Vec<Shape> {
+    graph
+        .all_edges()
+        .filter(|&(_, _, &w)| w > 0.0)
+        .map(|(pin_a, pin_b, _)| {
+            let pt_a = pin_ref_pt(&pcb, &pin_a.pin_ref);
+            let pt_b = pin_ref_pt(&pcb, &pin_b.pin_ref);
+            let width = if pin_a.layer_id != pin_b.layer_id {
+                0.5
+            } else {
+                if pin_a.layer_id == 0 {
+                    0.1
+                } else {
+                    0.2
+                }
+            };
+            Path::new(&[pt_a, pt_b], width).shape()
+        })
+        .collect::<Vec<Shape>>()
+}
+
+fn pin_ref_pt(pcb: &Pcb, pin_ref: &PinRef) -> Pt {
+    let (component, pin) = pcb.pin_ref(&pin_ref).unwrap();
+    (component.tf() * pin.tf()).pt(Pt::zero())
 }
