@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::sync::{Arc, LazyLock, Mutex};
 
 use eframe::egui::epaint::{Mesh, TessellationOptions, Tessellator};
@@ -173,55 +174,60 @@ impl PcbView {
     }
 
     fn render(&mut self, ctx: &Context) -> Mesh {
-        if self.mesh.is_empty() {
-            let mut mesh = Mesh::default();
-            let tf = Tf::new();
-            let mut tess = Tessellator::new(
-                ctx.pixels_per_point(),
-                TessellationOptions { feathering: false, ..Default::default() },
-                ctx.fonts().font_image_size(),
-            );
-            let pcb = self.pcb.clone();
-            for boundary in pcb.lock().unwrap().boundaries() {
-                let shapes = Self::draw_shape(&tf, boundary, *BOUNDARY);
-                Self::tessellate(&mut tess, &mut mesh, shapes);
-            }
-            for keepout in pcb.lock().unwrap().keepouts() {
-                let shapes = Self::draw_keepout(&tf, keepout, *KEEPOUT);
-                Self::tessellate(&mut tess, &mut mesh, shapes);
-            }
-            for component in pcb.lock().unwrap().components() {
-                let shapes = Self::draw_component(&tf, component);
-                Self::tessellate(&mut tess, &mut mesh, shapes);
-            }
-            for wire in pcb.lock().unwrap().wires() {
-                // TODO!!: Fix up layerset to color mapping.
-                let col = WIRE[Self::layer_id_to_color_idx(wire.shape.layers.id().unwrap())];
-                let shapes = Self::draw_shape(&tf, &wire.shape, col);
-                Self::tessellate(&mut tess, &mut mesh, shapes);
-            }
-            for via in pcb.lock().unwrap().vias() {
-                let shapes = Self::draw_padstack(&via.tf(), &via.padstack, *VIA);
-                Self::tessellate(&mut tess, &mut mesh, shapes);
-            }
-            for rt in pcb.lock().unwrap().debug_rts() {
-                let mut pts = rt.pts().to_vec();
-                pts.push(rt.pts()[0]);
-                let shape = path(&pts, 0.05).shape();
-                let shapes =
-                    Self::draw_shape(&tf, &LayerShape { shape, layers: LayerSet::empty() }, *DEBUG);
-                Self::tessellate(&mut tess, &mut mesh, shapes);
-            }
-            for annotation_group in pcb.lock().unwrap().debug_annotations() {
-                for annotation in annotation_group {
-                    let shapes = Self::draw_shape(&tf, annotation, *BOUNDARY);
-                    Self::tessellate(&mut tess, &mut mesh, shapes);
-                }
-            }
-            self.mesh = mesh;
+        // if self.mesh.is_empty() {
+        print!(".");
+        std::io::stdout().flush();
+
+        let mut mesh = Mesh::default();
+        let tf = Tf::new();
+        let mut tess = Tessellator::new(
+            ctx.pixels_per_point(),
+            TessellationOptions { feathering: false, ..Default::default() },
+            ctx.fonts().font_image_size(),
+        );
+        let pcb = self.pcb.clone();
+        for boundary in pcb.lock().unwrap().boundaries() {
+            let shapes = Self::draw_shape(&tf, boundary, *BOUNDARY);
+            Self::tessellate(&mut tess, &mut mesh, shapes);
         }
+        for keepout in pcb.lock().unwrap().keepouts() {
+            let shapes = Self::draw_keepout(&tf, keepout, *KEEPOUT);
+            Self::tessellate(&mut tess, &mut mesh, shapes);
+        }
+        for component in pcb.lock().unwrap().components() {
+            let shapes = Self::draw_component(&tf, component);
+            Self::tessellate(&mut tess, &mut mesh, shapes);
+        }
+        for wire in pcb.lock().unwrap().wires() {
+            // TODO!!: Fix up layerset to color mapping.
+            let col = WIRE[Self::layer_id_to_color_idx(wire.shape.layers.id().unwrap())];
+            let shapes = Self::draw_shape(&tf, &wire.shape, col);
+            Self::tessellate(&mut tess, &mut mesh, shapes);
+        }
+        for via in pcb.lock().unwrap().vias() {
+            let shapes = Self::draw_padstack(&via.tf(), &via.padstack, *VIA);
+            Self::tessellate(&mut tess, &mut mesh, shapes);
+        }
+        for rt in pcb.lock().unwrap().debug_rts() {
+            let mut pts = rt.pts().to_vec();
+            pts.push(rt.pts()[0]);
+            let shape = path(&pts, 0.05).shape();
+            let shapes =
+                Self::draw_shape(&tf, &LayerShape { shape, layers: LayerSet::empty() }, *DEBUG);
+            Self::tessellate(&mut tess, &mut mesh, shapes);
+        }
+        for annotation_group in pcb.lock().unwrap().debug_annotations() {
+            for annotation in annotation_group {
+                let shapes = Self::draw_shape(&tf, annotation, *BOUNDARY);
+                Self::tessellate(&mut tess, &mut mesh, shapes);
+            }
+        }
+        self.mesh = mesh;
+        // }
         let mut mesh = self.mesh.clone();
         if self.dirty {
+            print!("d");
+            std::io::stdout().flush();
             let inv = Tf::scale(pt(1.0, -1.0)); // Invert y axis
             let local_area = inv.rt(&self.local_area).bounds();
             let tf = Tf::translate(self.offset)
@@ -231,7 +237,7 @@ impl PcbView {
             for vert in &mut mesh.vertices {
                 vert.pos = to_pos2(tf.pt(to_pt(vert.pos)));
             }
-            self.dirty = false;
+            // self.dirty = false;
         }
         mesh
     }

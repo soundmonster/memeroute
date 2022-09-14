@@ -672,6 +672,10 @@ impl Pcb {
         self.debug_annotations.push(a);
     }
 
+    pub fn set_debug_annotations(&mut self, annotations: Vec<Vec<LayerShape>>) {
+        self.debug_annotations = annotations;
+    }
+
     pub fn debug_annotations(&self) -> &Vec<Vec<LayerShape>> {
         &self.debug_annotations
     }

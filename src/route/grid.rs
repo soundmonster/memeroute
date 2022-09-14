@@ -1,9 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use eyre::{eyre, Result};
 use memegeom::geom::math::f64_cmp;
 use memegeom::geom::qt::query::TagQuery;
+use memegeom::primitive::circle::Circle;
 use memegeom::primitive::point::{Pt, PtI};
 use memegeom::primitive::rect::{Rt, RtI};
 use memegeom::primitive::{circ, pt, pti, ShapeOps};
@@ -142,6 +143,7 @@ impl GridRouter {
     fn dijkstra(&self, srcs: &[State], dsts: &[State]) -> Vec<State> {
         let mut q: PriorityQueue<State, OrderedFloat<f64>> = PriorityQueue::new();
         let mut node_data: HashMap<State, NodeData> = HashMap::new();
+        let mut visited_points: HashSet<PtI> = HashSet::new();
 
         for src in srcs {
             // Try going from each of the valid layers in this state.
@@ -207,6 +209,15 @@ impl GridRouter {
 
             let data = node_data.get_mut(&cur).unwrap();
             data.seen = true;
+            if !visited_points.contains(&data.prev.p) {
+                visited_points.insert(data.prev.p);
+
+                if let Ok(mut pcb) = self.pcb.try_lock() {
+                    let c = Circle::new(self.world_pt_mid(data.prev.p), 0.1);
+                    let _ = pcb.add_debug_annotation(vec![LayerShape::one(0, c.shape())]);
+                }
+            }
+
             // Check if we reached any destination.
             for d in dsts {
                 if d.p == cur.p && d.layers.contains_set(cur.layers) {
