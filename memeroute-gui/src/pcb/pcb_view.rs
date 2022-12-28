@@ -218,7 +218,7 @@ impl PcbView {
         }
         for annotation_group in pcb.lock().unwrap().debug_annotations() {
             for annotation in annotation_group {
-                let shapes = Self::draw_shape(&tf, annotation, *BOUNDARY);
+                let shapes = Self::draw_shape(&tf, annotation, *DEBUG);
                 Self::tessellate(&mut tess, &mut mesh, shapes);
             }
         }
@@ -227,7 +227,7 @@ impl PcbView {
         let mut mesh = self.mesh.clone();
         if self.dirty {
             print!("d");
-            std::io::stdout().flush();
+            std::io::stdout().flush().unwrap();
             let inv = Tf::scale(pt(1.0, -1.0)); // Invert y axis
             let local_area = inv.rt(&self.local_area).bounds();
             let tf = Tf::translate(self.offset)
